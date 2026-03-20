@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>URL</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css" />
+    <script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script>
+
+    <style>
+        body {
+            margin:0;
+            font-family:Arial;
+            background: linear-gradient(135deg, #f5f7fa, #e4ecf5);
+            color:#111;
+        }
+
+        .header {
+            backdrop-filter: blur(10px);
+            background: rgba(255,255,255,0.6);
+            padding:20px;
+            text-align:center;
+            box-shadow:0 4px 10px rgba(0,0,0,0.1);
+            position: sticky;
+            top:0;
+            z-index:10;
+        }
+
+        input {
+            width:60%;
+            max-width:400px;
+            padding:10px;
+            border-radius:8px;
+            border:1px solid #ccc;
+        }
+
+        button {
+            padding:8px 14px;
+            background:#007bff;
+            color:white;
+            border:none;
+            cursor:pointer;
+            margin:5px;
+            border-radius:8px;
+            transition:0.3s;
+        }
+
+        button:hover {
+            background:#0056b3;
+            transform: scale(1.05);
+        }
+
+        .grid {
+            display:grid;
+            grid-template-columns:repeat(auto-fill, minmax(280px,1fr));
+            gap:20px;
+            padding:20px;
+        }
+
+        .shorts {
+            display:flex;
+            overflow-x:auto;
+            gap:15px;
+            padding:20px;
+        }
+
+        .card, .short-card {
+            backdrop-filter: blur(10px);
+            background: rgba(255,255,255,0.6);
+            border-radius:12px;
+            overflow:hidden;
+            padding:10px;
+            box-shadow:0 4px 10px rgba(0,0,0,0.1);
+        }
+
+        /* 🔥 FIXED SHORT CARD */
+        .short-card {
+            width:220px;
+            display:flex;
+            flex-direction:column;
+            align-items:center;
+        }
+
+        .short-card video {
+            width:100%;
+            height:300px;
+            object-fit:contain;
+            background:black;
+            border-radius:10px;
+        }
+
+        .short-buttons {
+            width:100%;
+            display:flex;
+            flex-direction:column;
+        }
+
+        video {
+            width:100%;
+            border-radius:10px;
+        }
+
+        .title {
+            padding:8px;
+            font-size:13px;
+            word-break: break-word;
+        }
+
+        #lockModal {
+            display:none;
+            position:fixed;
+            top:0; left:0;
+            width:100%; height:100%;
+            background:rgba(0,0,0,0.3);
+            justify-content:center;
+            align-items:center;
+        }
+
+        #lockModal div {
+            background:white;
+            padding:20px;
+            border-radius:12px;
+            text-align:center;
+            width:300px;
+        }
+
+        @media(max-width:600px){
+            input { width:90%; }
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="header">
+    <h2>🎬 URL</h2>
+
+    <input type="text" id="url" placeholder="Paste URL">
+    <button onclick="startDownload()">Download</button>
+    <button onclick="openLock()">Status</button>
+
+    <p id="status"></p>
+    <p id="percent"></p>
+    <p id="filename"></p>
+</div>
+
+<h2 style="padding-left:20px;">📱 Shorts</h2>
+<div class="shorts">
+{% for v in videos %}
+{% if v.type == "short" %}
+<div class="short-card">
+
+    <video class="plyr-video" controls>
+        <source src="{{ url_for('video', filename=v.name) }}">
+    </video>
+
+    <!-- 🔥 FIXED BUTTONS -->
+    <div class="short-buttons">
+        <button onclick="moveToPrivate('{{ v.name }}')">Move</button>
+        <button onclick="deleteVideo('{{ v.name }}')">Delete</button>
+    </div>
+
+</div>
+{% endif %}
+{% endfor %}
+</div>
+
+<h2 style="padding-left:20px;">📺 Videos</h2>
+<div class="grid">
+{% for v in videos %}
+{% if v.type == "wide" %}
+<div class="card">
+    <video class="plyr-video" controls>
+        <source src="{{ url_for('video', filename=v.name) }}">
+    </video>
+    <div class="title">{{ v.name }}</div>
+    <button onclick="moveToPrivate('{{ v.name }}')">Move</button>
+    <button onclick="deleteVideo('{{ v.name }}')">Delete</button>
+</div>
+{% endif %}
+{% endfor %}
+</div>
+
+<h2 style="padding-left:20px;">Status videos</h2>
+<div class="grid" id="privateContainer"></div>
+
+<div id="lockModal">
+    <div>
+        <h3>Enter Password</h3>
+        <input type="password" id="passwordInput">
+        <br><br>
+        <button onclick="unlock()">Unlock</button>
+        <button onclick="closeLock()">Cancel</button>
+        <p id="errorMsg" style="color:red;"></p>
+    </div>
+</div>
+
+<script>
+Plyr.setup('.plyr-video');
+
+function startDownload(){
+    let url = document.getElementById("url").value;
+
+    fetch("/download", {
+        method:"POST",
+        headers:{"Content-Type":"application/x-www-form-urlencoded"},
+        body:"url="+encodeURIComponent(url)
+    });
+
+    updateProgress();
+}
+
+function updateProgress(){
+    setInterval(()=>{
+        fetch("/progress")
+        .then(r=>r.json())
+        .then(d=>{
+            status.innerText=d.status;
+            percent.innerText=d.percent;
+            filename.innerText=d.filename;
+        });
+    },1000);
+}
+
+function deleteVideo(name){
+    if(!confirm("Delete?")) return;
+
+    fetch("/delete/"+encodeURIComponent(name),{method:"POST"})
+    .then(()=>location.reload());
+}
+
+function moveToPrivate(name){
+    if(!confirm("Move to private?")) return;
+
+    fetch("/move_to_private/"+encodeURIComponent(name),{method:"POST"})
+    .then(()=>location.reload());
+}
+
+function moveToPublic(name){
+    fetch("/move_to_public/"+encodeURIComponent(name),{method:"POST"})
+    .then(()=>location.reload());
+}
+
+function deletePrivate(name){
+    if(!confirm("Delete from private?")) return;
+
+    fetch("/delete_private/"+encodeURIComponent(name),{method:"POST"})
+    .then(()=>location.reload());
+}
+
+function openLock(){
+    document.getElementById("lockModal").style.display="flex";
+}
+
+function closeLock(){
+    document.getElementById("lockModal").style.display="none";
+}
+
+function unlock(){
+    let pass = document.getElementById("passwordInput").value;
+
+    fetch("/private",{
+        method:"POST",
+        headers:{"Content-Type":"application/x-www-form-urlencoded"},
+        body:"password="+encodeURIComponent(pass)
+    })
+    .then(r=>r.json())
+    .then(d=>{
+        if(d.status==="success"){
+            loadPrivate(d.files);
+            closeLock();
+        } else {
+            document.getElementById("errorMsg").innerText="Wrong password!";
+        }
+    });
+}
+
+function loadPrivate(files){
+    let container=document.getElementById("privateContainer");
+    container.innerHTML="";
+
+    files.forEach(f=>{
+        let div=document.createElement("div");
+        div.className="card";
+
+        div.innerHTML=`
+            <video class="plyr-video" controls>
+                <source src="/private_video/${f}">
+            </video>
+            <div class="title">${f}</div>
+
+            <button onclick="moveToPublic('${f}')">Move Back</button>
+            <button onclick="deletePrivate('${f}')">Delete</button>
+        `;
+
+        container.appendChild(div);
+    });
+
+    Plyr.setup('.plyr-video');
+}
+</script>
+
+</body>
+</html>
